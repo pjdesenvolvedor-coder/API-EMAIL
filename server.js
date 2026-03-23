@@ -8,7 +8,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.text({ type: '*/*' }));
 
-// Armazenamento simples em memória só para demonstração
+// Armazenamento simples em memória
 const receivedEvents = [];
 
 app.get('/', (req, res) => {
@@ -84,14 +84,14 @@ app.get('/', (req, res) => {
           <div class="pill">Webhook ativo</div>
           <h1>Receiver de Emails via Webhook</h1>
           <p class="muted">
-            Use este endpoint para receber os dados enviados pelo seu encaminhador de email.
+            Endpoint para receber emails.
           </p>
           <p><strong>Endpoint:</strong> <code>POST /webhook</code></p>
-          <p><strong>URL completa:</strong> <code>${req.protocol}://${req.get('host')}/webhook</code></p>
+          <p><strong>URL:</strong> <code>${req.protocol}://${req.get('host')}/webhook</code></p>
         </div>
 
         <div class="card">
-          <h2>Últimos eventos recebidos</h2>
+          <h2>Eventos recebidos</h2>
           <button onclick="loadEvents()">Atualizar</button>
           <pre id="events">Carregando...</pre>
         </div>
@@ -111,25 +111,34 @@ app.get('/', (req, res) => {
 });
 
 app.post('/webhook', (req, res) => {
-  const payload = {
+  const body = req.body;
+
+  // 🔥 Normaliza os dados recebidos
+  const event = {
     receivedAt: new Date().toISOString(),
-    headers: req.headers,
-    body: req.body,
+
+    // Compatível com seu formato atual
+    from: body.from || body.username || null,
+
+    // Se ainda estiver usando content (subject + body juntos)
+    subject: body.subject || null,
+    text: body.text || body.content || null,
+
+    raw: body
   };
 
-  receivedEvents.unshift(payload);
+  receivedEvents.unshift(event);
 
-  // Mantém no máximo 20 eventos na memória
-  if (receivedEvents.length > 20) {
+  // Limite de memória
+  if (receivedEvents.length > 50) {
     receivedEvents.pop();
   }
 
-  console.log('Novo webhook recebido:');
-  console.log(JSON.stringify(payload, null, 2));
+  console.log('Novo webhook processado:');
+  console.log(JSON.stringify(event, null, 2));
 
   res.status(200).json({
-    ok: true,
-    message: 'Webhook recebido com sucesso',
+    ok: true
   });
 });
 
@@ -139,5 +148,5 @@ app.get('/events', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
-  console.log(`Endpoint webhook: http://localhost:${PORT}/webhook`);
+  console.log(`Webhook: http://localhost:${PORT}/webhook`);
 });
