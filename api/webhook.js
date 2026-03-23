@@ -1,21 +1,12 @@
-const express = require('express');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.text({ type: '*/*' }));
-
-const receivedEvents = [];
+let receivedEvents = [];
 
 function normalizeEmail(value) {
   if (!value) return null;
   return String(value).trim().toLowerCase();
 }
 
-app.get('/', (req, res) => {
-  res.send(`
+function renderHtml(host) {
+  return `
     <!DOCTYPE html>
     <html lang="pt-BR">
     <head>
@@ -23,10 +14,7 @@ app.get('/', (req, res) => {
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Leitor de Emails via Webhook</title>
       <style>
-        * {
-          box-sizing: border-box;
-        }
-
+        * { box-sizing: border-box; }
         body {
           font-family: Arial, sans-serif;
           background: #0f172a;
@@ -34,25 +22,19 @@ app.get('/', (req, res) => {
           margin: 0;
           padding: 32px;
         }
-
         .container {
           max-width: 950px;
           margin: 0 auto;
         }
-
         .card {
           background: #111827;
           border: 1px solid #334155;
           border-radius: 16px;
           padding: 24px;
           margin-bottom: 20px;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.25);
         }
-
-        h1, h2, h3 {
-          margin-top: 0;
-        }
-
+        h1, h2, h3 { margin-top: 0; }
         .pill {
           display: inline-block;
           padding: 6px 10px;
@@ -62,17 +44,12 @@ app.get('/', (req, res) => {
           font-size: 14px;
           margin-bottom: 12px;
         }
-
-        .muted {
-          color: #94a3b8;
-        }
-
+        .muted { color: #94a3b8; }
         code {
           background: #1e293b;
           padding: 2px 6px;
           border-radius: 6px;
         }
-
         input {
           width: 100%;
           padding: 14px 16px;
@@ -83,11 +60,7 @@ app.get('/', (req, res) => {
           font-size: 16px;
           outline: none;
         }
-
-        input:focus {
-          border-color: #2563eb;
-        }
-
+        input:focus { border-color: #2563eb; }
         button {
           background: #2563eb;
           color: white;
@@ -97,19 +70,9 @@ app.get('/', (req, res) => {
           cursor: pointer;
           font-weight: bold;
           font-size: 15px;
+          margin-right: 8px;
         }
-
-        button:hover {
-          background: #1d4ed8;
-        }
-
-        .row {
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 12px;
-          margin-top: 14px;
-        }
-
+        button:hover { background: #1d4ed8; }
         .status {
           margin-top: 14px;
           padding: 12px 14px;
@@ -118,7 +81,6 @@ app.get('/', (req, res) => {
           border: 1px solid #243244;
           color: #cbd5e1;
         }
-
         .event {
           background: #020617;
           border: 1px solid #1e293b;
@@ -126,7 +88,6 @@ app.get('/', (req, res) => {
           padding: 18px;
           margin-top: 16px;
         }
-
         .label {
           color: #93c5fd;
           font-size: 13px;
@@ -134,23 +95,11 @@ app.get('/', (req, res) => {
           text-transform: uppercase;
           letter-spacing: 0.5px;
         }
-
         .value {
           margin-bottom: 16px;
           white-space: pre-wrap;
           word-break: break-word;
         }
-
-        pre {
-          background: #020617;
-          color: #93c5fd;
-          padding: 16px;
-          border-radius: 12px;
-          overflow: auto;
-          white-space: pre-wrap;
-          word-break: break-word;
-        }
-
         .empty {
           color: #94a3b8;
           font-style: italic;
@@ -163,16 +112,16 @@ app.get('/', (req, res) => {
           <div class="pill">Webhook ativo</div>
           <h1>Filtro de Emails por Remetente</h1>
           <p class="muted">
-            Digite um email abaixo. O sistema vai atualizar sozinho e mostrar apenas o último email recebido desse remetente.
+            Digite um email abaixo. O sistema atualiza sozinho e mostra apenas o último email recebido desse remetente.
           </p>
-          <p><strong>Endpoint:</strong> <code>POST /webhook</code></p>
-          <p><strong>URL:</strong> <code>\${req.protocol}://\${req.get('host')}/webhook</code></p>
+          <p><strong>Endpoint:</strong> <code>POST /api/webhook</code></p>
+          <p><strong>URL:</strong> <code>https://${host}/api/webhook</code></p>
         </div>
 
         <div class="card">
           <h2>Buscar email</h2>
           <input id="emailInput" type="email" placeholder="Digite o email, ex: pedro@email.com" />
-          <div class="row">
+          <div style="margin-top:14px;">
             <button onclick="startTracking()">Acompanhar</button>
             <button onclick="clearTracking()">Limpar</button>
           </div>
@@ -210,7 +159,7 @@ app.get('/', (req, res) => {
               <div class="value">\${escapeHtml(event.from || '')}</div>
 
               <div class="label">Assunto</div>
-              <div class="value">\${escapeHtml(event.subject || '(sem assunto separado)')}</div>
+              <div class="value">\${escapeHtml(event.subject || '(sem assunto)')}</div>
 
               <div class="label">Conteúdo</div>
               <div class="value">\${escapeHtml(event.text || '')}</div>
@@ -222,7 +171,7 @@ app.get('/', (req, res) => {
           if (!trackedEmail) return;
 
           try {
-            const res = await fetch('/events?email=' + encodeURIComponent(trackedEmail));
+            const res = await fetch('/api/webhook?email=' + encodeURIComponent(trackedEmail));
             const data = await res.json();
 
             const status = document.getElementById('status');
@@ -261,9 +210,7 @@ app.get('/', (req, res) => {
 
           document.getElementById('status').textContent = 'Acompanhando: ' + trackedEmail;
 
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-          }
+          if (pollingInterval) clearInterval(pollingInterval);
 
           fetchLatestEmail();
           pollingInterval = setInterval(fetchLatestEmail, 2000);
@@ -285,62 +232,75 @@ app.get('/', (req, res) => {
       </script>
     </body>
     </html>
-  `);
-});
+  `;
+}
 
-app.post('/webhook', (req, res) => {
-  const body = req.body || {};
+export default async function handler(req, res) {
+  try {
+    if (req.method === 'GET' && !req.query.email) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(200).send(renderHtml(req.headers.host));
+    }
 
-  const event = {
-    id: Date.now().toString() + Math.random().toString(36).slice(2, 8),
-    receivedAt: new Date().toISOString(),
-    from: normalizeEmail(body.from || body.username || null),
-    subject: body.subject || null,
-    text: body.text || body.content || null,
-    raw: body
-  };
+    if (req.method === 'POST') {
+      const body = req.body || {};
 
-  receivedEvents.unshift(event);
+      const event = {
+        id: Date.now().toString() + Math.random().toString(36).slice(2, 8),
+        receivedAt: new Date().toISOString(),
+        from: normalizeEmail(body.from || body.username || null),
+        subject: body.subject || null,
+        text: body.text || body.content || null,
+        raw: body
+      };
 
-  if (receivedEvents.length > 200) {
-    receivedEvents.pop();
-  }
+      receivedEvents.unshift(event);
 
-  console.log('Novo webhook recebido:');
-  console.log(JSON.stringify(event, null, 2));
+      if (receivedEvents.length > 200) {
+        receivedEvents.pop();
+      }
 
-  res.status(200).json({
-    ok: true,
-    message: 'Webhook recebido com sucesso'
-  });
-});
+      console.log('Novo webhook recebido:');
+      console.log(JSON.stringify(event, null, 2));
 
-app.get('/events', (req, res) => {
-  const email = normalizeEmail(req.query.email);
+      return res.status(200).json({
+        ok: true,
+        message: 'Webhook recebido com sucesso'
+      });
+    }
 
-  if (!email) {
-    return res.json({
-      found: false,
-      message: 'Nenhum email informado'
+    if (req.method === 'GET' && req.query.email) {
+      const email = normalizeEmail(req.query.email);
+
+      if (!email) {
+        return res.status(200).json({
+          found: false,
+          message: 'Nenhum email informado'
+        });
+      }
+
+      const latestMatch = receivedEvents.find(
+        (event) => normalizeEmail(event.from) === email
+      );
+
+      if (!latestMatch) {
+        return res.status(200).json({
+          found: false,
+          message: 'Nenhum email encontrado para esse remetente'
+        });
+      }
+
+      return res.status(200).json({
+        found: true,
+        event: latestMatch
+      });
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    console.error('Erro interno:', error);
+    return res.status(500).json({
+      error: 'Erro interno do servidor'
     });
   }
-
-  const latestMatch = receivedEvents.find((event) => normalizeEmail(event.from) === email);
-
-  if (!latestMatch) {
-    return res.json({
-      found: false,
-      message: 'Nenhum email encontrado para esse remetente'
-    });
-  }
-
-  return res.json({
-    found: true,
-    event: latestMatch
-  });
-});
-
-app.listen(PORT, () => {
-  console.log(\`Servidor rodando em http://localhost:\${PORT}\`);
-  console.log(\`Webhook: http://localhost:\${PORT}/webhook\`);
-});
+}
